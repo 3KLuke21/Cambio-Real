@@ -1,86 +1,71 @@
-#!/bin/zsh
-# ============================================================
-#  CambioReal — macOS Launcher
-#  Duplo-clique neste ficheiro no Finder para lançar o app.
-# ============================================================
+#!/bin/bash
+# launch-cambioreal.command
+# Double‑click to run on any macOS machine.
 
-# -- Cores para o terminal --
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+# ---- Helper functions ----
+log() { echo "[launch-cambioreal] $1"; }
 
-echo ""
-echo "${CYAN}${BOLD}============================================${NC}"
-echo "${CYAN}${BOLD}   💱  CambioReal — Iniciando...           ${NC}"
-echo "${CYAN}${BOLD}============================================${NC}"
-echo ""
-
-# -- Ir para a pasta onde este script está --
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
-
-# --------------------------------------------------------
-# 1. Verificar se o Homebrew está instalado
-# --------------------------------------------------------
-if ! command -v brew &>/dev/null; then
-  echo "${YELLOW}⚠️  Homebrew não encontrado. A instalar...${NC}"
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  # Adicionar brew ao PATH para sessão actual (Apple Silicon e Intel)
-  if [ -f "/opt/homebrew/bin/brew" ]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [ -f "/usr/local/bin/brew" ]; then
-    eval "$(/usr/local/bin/brew shellenv)"
+ensure_homebrew() {
+  if ! command -v brew >/dev/null 2>&1; then
+    log "Homebrew not found – installing..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # Add brew to PATH for this session (handles Intel & Apple Silicon)
+    export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
   fi
+}
+
+ensure_node() {
+  if ! command -v node >/dev/null 2>&1; then
+    log "Node.js not found – installing via Homebrew..."
+    brew install node
+  fi
+}
+
+# ---- Main script ----
+REPO_URL="https://github.com/3KLuke21/Cambio-Real.git"
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$PROJECT_DIR"
+
+# Pull latest code (clone if repository not present)
+if [ -d ".git" ]; then
+  log "Git repository detected – pulling latest changes..."
+  git pull origin main || git pull origin master || log "Unable to pull – proceeding with existing code"
 else
-  echo "${GREEN}✅  Homebrew já instalado.${NC}"
+  log "Cloning repository..."
+  git clone "$REPO_URL" .
 fi
 
-# --------------------------------------------------------
-# 2. Verificar / Instalar Node.js
-# --------------------------------------------------------
-if ! command -v node &>/dev/null; then
-  echo "${YELLOW}⚠️  Node.js não encontrado. A instalar via Homebrew...${NC}"
-  brew install node
+# Ensure required tools are installed
+ensure_homebrew
+ensure_node
+
+# Install npm dependencies (use ci if lockfile exists)
+if [ -f package-lock.json ]; then
+  log "Installing npm dependencies (ci)..."
+  npm ci
 else
-  NODE_VER=$(node -v)
-  echo "${GREEN}✅  Node.js ${NODE_VER} já instalado.${NC}"
+  log "Installing npm dependencies..."
+  npm install
 fi
 
-# --------------------------------------------------------
-# 3. Instalar dependências npm do projecto
-# --------------------------------------------------------
-echo ""
-echo "${CYAN}📦  A instalar dependências do projecto...${NC}"
-npm install
+# Start Vite dev server in background and capture PID
+log "Starting Vite dev server..."
+npm run dev &
+VITE_PID=$!
+log "Vite server PID: $VITE_PID"
 
-if [ $? -ne 0 ]; then
-  echo "${RED}❌  Erro ao instalar dependências. Verifica a ligação à internet.${NC}"
-  read -p "Pressiona Enter para fechar..."
-  exit 1
-fi
+# Open the app in the default browser
+log "Opening http://localhost:5173 in default browser..."
+open "http://localhost:5173" || log "Failed to open browser – open manually"
 
-echo "${GREEN}✅  Dependências instaladas com sucesso.${NC}"
+# Cleanup function to stop the server when the script exits
+cleanup() {
+  if kill -0 $VITE_PID 2>/dev/null; then
+    log "Stopping Vite dev server (PID $VITE_PID)..."
+    kill $VITE_PID 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
 
-# --------------------------------------------------------
-# 4. Abrir o browser automaticamente (aguarda servidor)
-# --------------------------------------------------------
-echo ""
-echo "${CYAN}🚀  A lançar o servidor de desenvolvimento...${NC}"
-echo "${CYAN}    O browser vai abrir em http://localhost:5173${NC}"
-echo ""
-
-# Aguarda 3 segundos e abre o browser
-(sleep 3 && open "http://localhost:5173") &
-
-# --------------------------------------------------------
-# 5. Iniciar o servidor (bloqueia o terminal)
-# --------------------------------------------------------
-npm run dev
-
-# Se o servidor fechar, aguarda input antes de fechar a janela
-echo ""
-echo "${YELLOW}Servidor encerrado. Pressiona Enter para fechar esta janela.${NC}"
-read
+# Keep script alive until the Vite process ends (Ctrl‑C or window close triggers cleanup)
+wait $VITE_PID
