@@ -1,49 +1,76 @@
 const FAWAZ_CURRENCIES = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies.json';
-const FAWAZ_RATES = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json';
+const AWESOME_API_BASE = 'https://economia.awesomeapi.com.br/last';
+
+const FALLBACK_CURRENCIES = {
+  "gbp": "Libra Esterlina",
+  "usd": "Dólar Americano",
+  "brl": "Real Brasileiro",
+  "eur": "Euro",
+  "cad": "Dólar Canadense",
+  "aud": "Dólar Australiano",
+  "chf": "Franco Suíço",
+  "jpy": "Iene Japonês",
+  "cny": "Yuan Chinês",
+  "usdt": "Tether USD"
+};
 
 // Fetch the master list of all currencies once
 export const fetchCurrencyList = async () => {
   try {
     const res = await fetch(FAWAZ_CURRENCIES);
+    if (!res.ok) throw new Error('Failed to fetch currency list');
     const data = await res.json();
-    return data;
+    return { ...FALLBACK_CURRENCIES, ...data };
   } catch (error) {
-    console.error('Error fetching currency list:', error);
-    return null;
+    console.warn('Error fetching currency list, using fallback:', error);
+    return FALLBACK_CURRENCIES;
   }
 };
 
-// Generate rates strictly for requested pairs
-export const fetchRates = async (activePairs = ['GBP/USDT', 'USDT/BRL', 'GBP/BRL']) => {
+// Generate rates strictly for requested pairs using AwesomeAPI
+export const fetchRates = async (activePairs = ['GBP/USD', 'USD/BRL', 'GBP/BRL']) => {
   try {
-    const usdRatesRes = await fetch(FAWAZ_RATES);
-    const usdData = await usdRatesRes.json();
-    const ratesBase = usdData.usd;
+    if (!activePairs || activePairs.length === 0) return {};
 
-    const result = {};
+    // Map "GBP/USD" to "GBP-USD"
+    const apiPairs = activePairs.map(p => {
+      const parts = p.split('/');
+      return `${parts[0]}-${parts[1]}`;
+    }).join(',');
+
+    const res = await fetch(`${AWESOME_API_BASE}/${apiPairs}`);
+    if (!res.ok) {
+      throw new Error(`AwesomeAPI returned status: ${res.status}`);
+    }
     
+    const data = await res.json();
+    const result = {};
+
     for (const pair of activePairs) {
       const [from, to] = pair.split('/');
       if (!from || !to) continue;
 
-      const fromKey = from.toLowerCase();
-      const toKey = to.toLowerCase();
-      
-      if (ratesBase[fromKey] && ratesBase[toKey]) {
-        // Rate: How many 'to' for 1 'from'
-        const rate = ratesBase[toKey] / ratesBase[fromKey];
-        
+      // AwesomeAPI returns keys like "GBPBRL" for "GBP-BRL"
+      const apiKey = `${from}${to}`.toUpperCase();
+      const pairInfo = data[apiKey];
+
+      if (pairInfo && pairInfo.bid) {
+        const rate = parseFloat(pairInfo.bid);
         result[pair] = {
           rate: rate,
           inverse: 1 / rate,
-          timestamp: Date.now()
+          timestamp: pairInfo.timestamp ? parseInt(pairInfo.timestamp) * 1000 : Date.now()
         };
+      } else {
+        // Log warning for missing pairs
+        console.warn(`Pair info not found in AwesomeAPI response for key: ${apiKey}`);
       }
     }
 
     return result;
   } catch (error) {
-    console.error('Error fetching dynamic rates:', error);
+    console.error('Error fetching rates from AwesomeAPI:', error);
     return null;
   }
 };
+

@@ -14,17 +14,17 @@ export default function Calculator({ activePairs }) {
     {
       id: 1,
       from: 'GBP',
-      to: 'USDT',
-      quotePair: 'GBP/USDT',
+      to: 'USD',
+      quotePair: 'GBP/USD',
       marginType: 'percent', 
       marginValue: -4, 
       lockedRate: null, 
     },
     {
       id: 2,
-      from: 'USDT',
+      from: 'USD',
       to: 'BRL',
-      quotePair: 'USDT/BRL',
+      quotePair: 'USD/BRL',
       marginType: 'points',
       marginValue: 0.06,
       lockedRate: null,
@@ -116,7 +116,45 @@ export default function Calculator({ activePairs }) {
     setSteps(steps.filter(s => s.id !== id));
   };
 
-  let currentValue = initialCapital;
+  // Pre-calculate cumulative values for each step to accurately track input/output
+  let tempValue = initialCapital;
+  const stepValues = steps.map((step) => {
+    const inputValue = tempValue;
+    const marketRate = step.lockedRate || getMarketRate(step.quotePair);
+    const finalRate = calculateStepRate(marketRate, step.marginType, step.marginValue);
+    const outputValue = calculateOutput(inputValue, finalRate, step.from, step.quotePair);
+    tempValue = outputValue;
+    return {
+      ...step,
+      inputValue,
+      outputValue,
+      marketRate,
+      finalRate
+    };
+  });
+
+  const finalValue = stepValues.length > 0 ? stepValues[stepValues.length - 1].outputValue : initialCapital;
+
+  // Extract the GBP amount (initial capital if starting with GBP, or input of first step starting with GBP)
+  let gbpAmount = null;
+  if (initialCurrency === 'GBP') {
+    gbpAmount = initialCapital;
+  } else {
+    const gbpStep = stepValues.find(s => s.from === 'GBP');
+    if (gbpStep) {
+      gbpAmount = gbpStep.inputValue;
+    }
+  }
+
+  // Extract the BRL amount (output of the last step converting to BRL)
+  let brlAmount = null;
+  const brlStep = [...stepValues].reverse().find(s => s.to === 'BRL');
+  if (brlStep) {
+    brlAmount = brlStep.outputValue;
+  }
+
+  // Calculate the effective GBP/BRL cost (BRL divided by GBP)
+  const gbpBrlCost = (gbpAmount > 0 && brlAmount > 0) ? (brlAmount / gbpAmount) : null;
 
   return (
     <div className="calculator-wrapper">
@@ -141,15 +179,7 @@ export default function Calculator({ activePairs }) {
       </div>
 
       <div className="steps-container">
-        {steps.map((step, index) => {
-          const inputValue = index === 0 ? initialCapital : currentValue;
-          
-          const marketRate = step.lockedRate || getMarketRate(step.quotePair);
-          const finalRate = calculateStepRate(marketRate, step.marginType, step.marginValue);
-          const outputValue = calculateOutput(inputValue, finalRate, step.from, step.quotePair);
-          
-          currentValue = outputValue;
-
+        {stepValues.map((step, index) => {
           return (
             <div key={step.id} className="step-card glass-panel fade-in">
               <button className="remove-btn" onClick={() => removeStep(step.id)}>×</button>
@@ -185,7 +215,7 @@ export default function Calculator({ activePairs }) {
                 <div className="rate-info">
                   <div className="flex-between">
                     <span>Cotação Comercial ({step.quotePair}):</span>
-                    <span className="monospace">{marketRate.toFixed(5)}</span>
+                    <span className="monospace">{step.marketRate.toFixed(5)}</span>
                   </div>
                   <button 
                     className={`lock-btn ${step.lockedRate ? 'locked' : ''}`}
@@ -218,17 +248,17 @@ export default function Calculator({ activePairs }) {
                 <div className="step-result">
                   <div className="flex-between">
                     <span>Taxa Aplicada ({step.quotePair}):</span>
-                    <strong className="monospace text-accent">{finalRate.toFixed(5)}</strong>
+                    <strong className="monospace text-accent">{step.finalRate.toFixed(5)}</strong>
                   </div>
                   <div className="conversion-flow">
                     <div className="conv-value from-value">
                       <span className="currency-symbol">{step.from}</span>
-                      {inputValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {step.inputValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div className="conv-arrow">⟶</div>
                     <div className="conv-value to-value">
                       <span className="currency-symbol">{step.to}</span>
-                      {outputValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {step.outputValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
                 </div>
@@ -251,14 +281,23 @@ export default function Calculator({ activePairs }) {
           </div>
           <div className="summary-item highlight">
             <span>Capital Final</span>
-            <strong>{currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {steps.length > 0 ? steps[steps.length-1].to : initialCurrency}</strong>
+            <strong>{finalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {steps.length > 0 ? steps[steps.length-1].to : initialCurrency}</strong>
           </div>
           
+          {gbpBrlCost !== null && (
+            <div className="summary-item highlight">
+              <span>Custo Efetivo (GBP/BRL)</span>
+              <strong className="text-accent">
+                {gbpBrlCost.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+              </strong>
+            </div>
+          )}
+
           {steps.length > 0 && steps[steps.length-1].to === initialCurrency && (
-            <div className={`summary-item profit ${currentValue - initialCapital >= 0 ? 'positive' : 'negative'}`}>
+            <div className={`summary-item profit ${finalValue - initialCapital >= 0 ? 'positive' : 'negative'}`}>
               <span>Lucro Líquido</span>
               <strong>
-                {(currentValue - initialCapital).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {initialCurrency}
+                {(finalValue - initialCapital).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {initialCurrency}
               </strong>
             </div>
           )}

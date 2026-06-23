@@ -6,7 +6,7 @@ import CurrencyModal from './components/CurrencyModal';
 import { fetchCurrencyList } from './services/api';
 
 function App() {
-  const [activePairs, setActivePairs] = useState(['GBP/USDT', 'USDT/BRL', 'GBP/BRL']);
+  const [activePairs, setActivePairs] = useState(['GBP/USD', 'USD/BRL', 'GBP/BRL']);
   const [currencyDict, setCurrencyDict] = useState({});
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [theme, setTheme] = useState('light'); // Padrão light (estilo Wise)
