@@ -46,7 +46,7 @@ export default function Calculator({ activePairs }) {
       if (data) setLiveRates(data);
     };
     updateRates();
-    const interval = setInterval(updateRates, 5000);
+    const interval = setInterval(updateRates, 30000);
     return () => clearInterval(interval);
   }, [activePairs]);
 
