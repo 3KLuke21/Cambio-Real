@@ -23,16 +23,19 @@ ensure_node() {
 
 # ---- Main script ----
 REPO_URL="https://github.com/3KLuke21/Cambio-Real.git"
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$PROJECT_DIR"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_DIR="$SCRIPT_DIR/CambioReal_App"
 
 # Pull latest code (clone if repository not present)
-if [ -d ".git" ]; then
+if [ -d "$APP_DIR/.git" ]; then
   log "Git repository detected – pulling latest changes..."
+  cd "$APP_DIR"
   git pull origin main || git pull origin master || log "Unable to pull – proceeding with existing code"
 else
-  log "Cloning repository..."
-  git clone "$REPO_URL" .
+  log "Cloning repository into CambioReal_App..."
+  cd "$SCRIPT_DIR"
+  git clone "$REPO_URL" "CambioReal_App"
+  cd "$APP_DIR"
 fi
 
 # Ensure required tools are installed
